@@ -12,7 +12,9 @@
 <body>
     <canvas id="renderCanvas"></canvas>
     <div id="ui-overlay">
-        <button id="spawnBtn">Spawn Ball</button>
+        <button id="spawnBallBtn">Spawn Ball</button>
+        <button id="spawnBoxBtn">Spawn Box</button>
+        <button id="resetBtn">Reset Scene</button>
     </div>
 
     <script>
@@ -26,7 +28,10 @@
             const scene = new BABYLON.Scene(engine);
             scene.clearColor = new BABYLON.Color4(0.05, 0.05, 0.12, 1);
 
-            // Camera — works for desktop preview and as fallback in VR
+            // Track spawned objects for cleanup
+            const spawnedObjects = [];
+            const MAX_OBJECTS = 80;
+
             const camera = new BABYLON.FreeCamera(
                 "camera",
                 new BABYLON.Vector3(0, 3, -8),
@@ -35,7 +40,7 @@
             camera.setTarget(new BABYLON.Vector3(0, 1, 0));
             camera.attachControl(canvas, true);
 
-            // Lighting
+            // ── Lighting ───────────────────────────────────────
             const hemi = new BABYLON.HemisphericLight(
                 "hemi",
                 new BABYLON.Vector3(0, 1, 0),
@@ -51,7 +56,6 @@
             dir.intensity = 0.8;
             dir.position = new BABYLON.Vector3(5, 10, -5);
 
-            // Shadows
             const shadowGen = new BABYLON.ShadowGenerator(1024, dir);
             shadowGen.useBlurExponentialShadowMap = true;
 
@@ -82,7 +86,23 @@
                 scene
             );
 
-            // ── Helper: random color material ──────────────────
+            // ── Walls (invisible barriers) ─────────────────────
+            function createWall(name, width, height, depth, pos) {
+                const wall = BABYLON.MeshBuilder.CreateBox(
+                    name, { width, height, depth }, scene
+                );
+                wall.position = pos;
+                wall.isVisible = false;
+                new BABYLON.PhysicsAggregate(
+                    wall, BABYLON.PhysicsShapeType.BOX, { mass: 0 }, scene
+                );
+            }
+            createWall("wallN", 20, 4, 0.5, new BABYLON.Vector3(0, 2, 10));
+            createWall("wallS", 20, 4, 0.5, new BABYLON.Vector3(0, 2, -10));
+            createWall("wallE", 0.5, 4, 20, new BABYLON.Vector3(10, 2, 0));
+            createWall("wallW", 0.5, 4, 20, new BABYLON.Vector3(-10, 2, 0));
+
+            // ── Materials ──────────────────────────────────────
             const palette = [
                 new BABYLON.Color3(0.9, 0.2, 0.2),
                 new BABYLON.Color3(0.2, 0.7, 0.3),
@@ -90,84 +110,208 @@
                 new BABYLON.Color3(0.95, 0.7, 0.1),
                 new BABYLON.Color3(0.8, 0.3, 0.8),
                 new BABYLON.Color3(0.1, 0.8, 0.8),
+                new BABYLON.Color3(1.0, 0.5, 0.1),
+                new BABYLON.Color3(0.4, 0.9, 0.6),
             ];
 
             function randomMaterial(prefix) {
-                const mat = new BABYLON.StandardMaterial(prefix + "_mat", scene);
+                const mat = new BABYLON.StandardMaterial(
+                    prefix + "_" + Date.now(), scene
+                );
                 mat.diffuseColor =
                     palette[Math.floor(Math.random() * palette.length)];
                 return mat;
             }
 
+            // ── Object cleanup ─────────────────────────────────
+            function trackObject(mesh, aggregate) {
+                spawnedObjects.push({ mesh, aggregate });
+                while (spawnedObjects.length > MAX_OBJECTS) {
+                    const old = spawnedObjects.shift();
+                    old.aggregate.dispose();
+                    old.mesh.dispose();
+                }
+            }
+
+            // Remove objects that fall below the ground
+            scene.onBeforeRenderObservable.add(() => {
+                for (let i = spawnedObjects.length - 1; i >= 0; i--) {
+                    if (spawnedObjects[i].mesh.position.y < -5) {
+                        spawnedObjects[i].aggregate.dispose();
+                        spawnedObjects[i].mesh.dispose();
+                        spawnedObjects.splice(i, 1);
+                    }
+                }
+            });
+
             // ── Spawn helpers ──────────────────────────────────
-            function spawnBox(position) {
-                const size = 0.4 + Math.random() * 0.6;
+            function spawnBox(position, impulseDir, size) {
+                const s = size || 0.3 + Math.random() * 0.5;
                 const box = BABYLON.MeshBuilder.CreateBox(
-                    "box_" + Date.now(),
-                    { size },
-                    scene
+                    "box_" + Date.now(), { size: s }, scene
                 );
                 box.position = position.clone();
                 box.material = randomMaterial("box");
                 shadowGen.addShadowCaster(box);
 
-                new BABYLON.PhysicsAggregate(
-                    box,
-                    BABYLON.PhysicsShapeType.BOX,
-                    { mass: 1, friction: 0.6, restitution: 0.3 },
-                    scene
+                const agg = new BABYLON.PhysicsAggregate(
+                    box, BABYLON.PhysicsShapeType.BOX,
+                    { mass: 1, friction: 0.6, restitution: 0.3 }, scene
                 );
+
+                if (impulseDir) {
+                    agg.body.applyImpulse(impulseDir, box.getAbsolutePosition());
+                }
+                trackObject(box, agg);
                 return box;
             }
 
-            function spawnBall(position, impulseDir) {
-                const radius = 0.2 + Math.random() * 0.3;
+            function spawnBall(position, impulseDir, radius) {
+                const r = radius || 0.15 + Math.random() * 0.2;
                 const sphere = BABYLON.MeshBuilder.CreateSphere(
                     "ball_" + Date.now(),
-                    { diameter: radius * 2, segments: 16 },
-                    scene
+                    { diameter: r * 2, segments: 16 }, scene
                 );
                 sphere.position = position.clone();
                 sphere.material = randomMaterial("ball");
                 shadowGen.addShadowCaster(sphere);
 
                 const agg = new BABYLON.PhysicsAggregate(
-                    sphere,
-                    BABYLON.PhysicsShapeType.SPHERE,
-                    { mass: 1, friction: 0.5, restitution: 0.6 },
-                    scene
+                    sphere, BABYLON.PhysicsShapeType.SPHERE,
+                    { mass: 1, friction: 0.5, restitution: 0.7 }, scene
                 );
 
                 if (impulseDir) {
-                    agg.body.applyImpulse(
-                        impulseDir,
-                        sphere.getAbsolutePosition()
-                    );
+                    agg.body.applyImpulse(impulseDir, sphere.getAbsolutePosition());
                 }
+                trackObject(sphere, agg);
                 return sphere;
             }
 
-            // ── Initial scene objects ──────────────────────────
-            for (let i = 0; i < 6; i++) {
-                const x = (Math.random() - 0.5) * 6;
-                const z = (Math.random() - 0.5) * 6;
-                spawnBox(new BABYLON.Vector3(x, 3 + i * 1.2, z));
-            }
-            for (let i = 0; i < 4; i++) {
-                const x = (Math.random() - 0.5) * 4;
-                const z = (Math.random() - 0.5) * 4;
-                spawnBall(new BABYLON.Vector3(x, 5 + i * 1.5, z), null);
+            function spawnCylinder(position, impulseDir) {
+                const r = 0.15 + Math.random() * 0.15;
+                const h = 0.4 + Math.random() * 0.6;
+                const cyl = BABYLON.MeshBuilder.CreateCylinder(
+                    "cyl_" + Date.now(),
+                    { diameter: r * 2, height: h, tessellation: 12 }, scene
+                );
+                cyl.position = position.clone();
+                cyl.material = randomMaterial("cyl");
+                shadowGen.addShadowCaster(cyl);
+
+                const agg = new BABYLON.PhysicsAggregate(
+                    cyl, BABYLON.PhysicsShapeType.CYLINDER,
+                    { mass: 1, friction: 0.5, restitution: 0.4 }, scene
+                );
+
+                if (impulseDir) {
+                    agg.body.applyImpulse(impulseDir, cyl.getAbsolutePosition());
+                }
+                trackObject(cyl, agg);
+                return cyl;
             }
 
-            // ── Desktop UI: spawn ball button ──────────────────
-            document.getElementById("spawnBtn").addEventListener("click", () => {
-                const pos = new BABYLON.Vector3(
-                    (Math.random() - 0.5) * 4,
-                    5,
-                    (Math.random() - 0.5) * 4
+            // ── Muzzle flash effect ────────────────────────────
+            function muzzleFlash(position) {
+                const flash = BABYLON.MeshBuilder.CreateSphere(
+                    "flash", { diameter: 0.15, segments: 6 }, scene
                 );
-                spawnBall(pos, null);
-            });
+                flash.position = position.clone();
+                const mat = new BABYLON.StandardMaterial("flashMat", scene);
+                mat.emissiveColor = new BABYLON.Color3(1, 0.8, 0.3);
+                mat.disableLighting = true;
+                flash.material = mat;
+
+                let life = 1.0;
+                const obs = scene.onBeforeRenderObservable.add(() => {
+                    life -= 0.08;
+                    flash.scaling.setAll(life);
+                    mat.alpha = life;
+                    if (life <= 0) {
+                        scene.onBeforeRenderObservable.remove(obs);
+                        flash.dispose();
+                        mat.dispose();
+                    }
+                });
+            }
+
+            // ── Build a target stack ───────────────────────────
+            function buildTargetStack() {
+                const baseX = 4;
+                const baseZ = 4;
+                for (let row = 0; row < 4; row++) {
+                    for (let col = 0; col < 4 - row; col++) {
+                        const x = baseX + col * 0.55 - (4 - row) * 0.275;
+                        const y = 0.25 + row * 0.5;
+                        spawnBox(new BABYLON.Vector3(x, y, baseZ), null, 0.5);
+                    }
+                }
+            }
+
+            // ── Initial scene ──────────────────────────────────
+            buildTargetStack();
+            for (let i = 0; i < 3; i++) {
+                const x = (Math.random() - 0.5) * 4;
+                const z = (Math.random() - 0.5) * 4;
+                spawnBall(new BABYLON.Vector3(x, 4 + i, z), null);
+            }
+            for (let i = 0; i < 2; i++) {
+                const x = (Math.random() - 0.5) * 3;
+                const z = (Math.random() - 0.5) * 3;
+                spawnCylinder(new BABYLON.Vector3(x, 3 + i, z), null);
+            }
+
+            // ── Reset scene ────────────────────────────────────
+            function resetScene() {
+                while (spawnedObjects.length > 0) {
+                    const obj = spawnedObjects.pop();
+                    obj.aggregate.dispose();
+                    obj.mesh.dispose();
+                }
+                buildTargetStack();
+                for (let i = 0; i < 3; i++) {
+                    spawnBall(
+                        new BABYLON.Vector3(
+                            (Math.random() - 0.5) * 4, 4 + i,
+                            (Math.random() - 0.5) * 4
+                        ), null
+                    );
+                }
+            }
+
+            // ── Desktop UI ─────────────────────────────────────
+            document.getElementById("spawnBallBtn")
+                .addEventListener("click", () => {
+                    spawnBall(new BABYLON.Vector3(
+                        (Math.random() - 0.5) * 4, 5,
+                        (Math.random() - 0.5) * 4
+                    ), null);
+                });
+
+            document.getElementById("spawnBoxBtn")
+                .addEventListener("click", () => {
+                    spawnBox(new BABYLON.Vector3(
+                        (Math.random() - 0.5) * 4, 5,
+                        (Math.random() - 0.5) * 4
+                    ), null);
+                });
+
+            document.getElementById("resetBtn")
+                .addEventListener("click", resetScene);
+
+            // ── Desktop mouse shooting (right-click) ───────────
+            scene.onPointerDown = (evt) => {
+                if (evt.button !== 2) return;
+                const ray = scene.createPickingRay(
+                    scene.pointerX, scene.pointerY,
+                    BABYLON.Matrix.Identity(), camera
+                );
+                const spawnPos = ray.origin.add(ray.direction.scale(1.5));
+                const impulse = ray.direction.scale(12);
+                spawnBall(spawnPos, impulse, 0.15);
+                muzzleFlash(spawnPos);
+            };
+            canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
             // ── WebXR ──────────────────────────────────────────
             try {
@@ -176,28 +320,61 @@
                     disableTeleportation: false,
                 });
 
-                // Controller trigger → spawn ball in front of controller
                 xr.input.onControllerAddedObservable.add((controller) => {
                     controller.onMotionControllerInitObservable.add((mc) => {
-                        const trigger =
-                            mc.getComponent("xr-standard-trigger");
+
+                        // ── TRIGGER: shoot ball ────────────────
+                        const trigger = mc.getComponent("xr-standard-trigger");
                         if (trigger) {
-                            trigger.onButtonStateChangedObservable.add(
-                                (component) => {
-                                    if (component.pressed) {
-                                        const pos =
-                                            controller.pointer.absolutePosition.clone();
-                                        const fwd =
-                                            controller.pointer.forward.clone();
-                                        // Spawn slightly in front of controller
-                                        const spawnPos = pos.add(
-                                            fwd.scale(0.3)
-                                        );
-                                        const impulse = fwd.scale(5);
-                                        spawnBall(spawnPos, impulse);
-                                    }
+                            trigger.onButtonStateChangedObservable.add((comp) => {
+                                if (comp.pressed) {
+                                    const pos = controller.pointer.absolutePosition.clone();
+                                    const fwd = controller.pointer.forward.clone();
+                                    const spawnPos = pos.add(fwd.scale(0.3));
+                                    spawnBall(spawnPos, fwd.scale(10), 0.15);
+                                    muzzleFlash(spawnPos);
                                 }
-                            );
+                            });
+                        }
+
+                        // ── SQUEEZE: shoot box ─────────────────
+                        const squeeze = mc.getComponent("xr-standard-squeeze");
+                        if (squeeze) {
+                            squeeze.onButtonStateChangedObservable.add((comp) => {
+                                if (comp.pressed) {
+                                    const pos = controller.pointer.absolutePosition.clone();
+                                    const fwd = controller.pointer.forward.clone();
+                                    const spawnPos = pos.add(fwd.scale(0.3));
+                                    spawnBox(spawnPos, fwd.scale(8), 0.4);
+                                    muzzleFlash(spawnPos);
+                                }
+                            });
+                        }
+
+                        // ── A/X BUTTON: spawn cylinder ─────────
+                        const aBtn = mc.getComponent("a-button") ||
+                                     mc.getComponent("x-button");
+                        if (aBtn) {
+                            aBtn.onButtonStateChangedObservable.add((comp) => {
+                                if (comp.pressed) {
+                                    const pos = controller.pointer.absolutePosition.clone();
+                                    const fwd = controller.pointer.forward.clone();
+                                    const spawnPos = pos.add(fwd.scale(0.3));
+                                    spawnCylinder(spawnPos, fwd.scale(6));
+                                    muzzleFlash(spawnPos);
+                                }
+                            });
+                        }
+
+                        // ── B/Y BUTTON: reset scene ────────────
+                        const bBtn = mc.getComponent("b-button") ||
+                                     mc.getComponent("y-button");
+                        if (bBtn) {
+                            bBtn.onButtonStateChangedObservable.add((comp) => {
+                                if (comp.pressed) {
+                                    resetScene();
+                                }
+                            });
                         }
                     });
                 });
