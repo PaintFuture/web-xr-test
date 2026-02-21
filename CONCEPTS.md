@@ -36,3 +36,11 @@ Ordered foundational → advanced. Each becomes an interactive 3D scene.
 
 19. **Decoherence & Noise** — Environment destroys quantum properties over time. Bloch sphere under bombardment with shielding.
 20. **Quantum Error Correction** — Encode one logical qubit across many physical ones. Protective formation that self-heals.
+
+## Tier 6: Future Applications
+
+21. **Drug Discovery** — Simulating molecular interactions to design new medicines. Build a molecule from atoms, watch quantum simulation reveal binding energies that classical computers can't compute.
+22. **Quantum Cryptography (QKD)** — Unbreakable encryption using quantum key distribution. Alice and Bob exchange photon-encoded keys; any eavesdropper disturbs the quantum states and gets detected.
+23. **Quantum Machine Learning** — Quantum-enhanced pattern recognition. Feed data into a quantum feature space where patterns become separable that classical ML can't distinguish.
+24. **Quantum Internet** — A network of entangled nodes enabling distributed quantum computing and unhackable communication. Visualize entanglement swapping across relay nodes.
+25. **Quantum Supremacy Timeline** — Interactive timeline of quantum computing milestones from Feynman's 1981 proposal to today's 1000+ qubit processors, with projections for the future.
