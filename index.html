@@ -199,6 +199,196 @@
             return plane;
         };
 
+        // ── XR Interactions (applied to every scene) ────────
+        qvr.setupXRInteractions = function (scene, xr) {
+            if (!xr || !xr.baseExperience) return;
+
+            const DEADZONE_DEG = 5;
+            const DEADZONE_RAD = DEADZONE_DEG * Math.PI / 180;
+            const FLY_SPEED = 0.06;
+            const VERTICAL_SPEED = 0.03;
+
+            // ── Head-tilt flying ───────────────────────────────
+            // Lean forward (pitch down) > 5° = fly in gaze direction
+            // Lean back (pitch up) > 5° = fly backward
+            let baseHeadPitch = null;
+            let calibrated = false;
+
+            xr.baseExperience.onStateChangedObservable.add((state) => {
+                if (state === BABYLON.WebXRState.IN_XR) {
+                    // Calibrate after a short delay so user settles
+                    setTimeout(() => {
+                        calibrated = false; // will calibrate on first frame
+                    }, 1000);
+                }
+            });
+
+            scene.onBeforeRenderObservable.add(() => {
+                if (!xr.baseExperience.camera) return;
+                const cam = xr.baseExperience.camera;
+
+                // Get head pitch from camera rotation
+                const rot = cam.rotationQuaternion;
+                if (!rot) return;
+
+                // Extract pitch (x rotation) from quaternion
+                const euler = rot.toEulerAngles();
+                const pitch = euler.x; // negative = looking down, positive = looking up
+
+                // Calibrate: store neutral pitch on first frame
+                if (!calibrated) {
+                    baseHeadPitch = pitch;
+                    calibrated = true;
+                    return;
+                }
+
+                const deltaPitch = pitch - baseHeadPitch;
+
+                // Forward: lean forward (pitch more negative than neutral)
+                // Backward: lean back (pitch more positive than neutral)
+                if (Math.abs(deltaPitch) > DEADZONE_RAD) {
+                    const intensity = (Math.abs(deltaPitch) - DEADZONE_RAD) * 3;
+                    const speed = Math.min(intensity, 1) * FLY_SPEED;
+                    const direction = deltaPitch < 0 ? 1 : -1; // lean forward = move forward
+
+                    // Get forward direction from camera (horizontal only)
+                    const forward = cam.getForwardRay().direction;
+                    forward.y = 0;
+                    forward.normalize();
+
+                    const move = forward.scale(direction * speed);
+                    cam.position.addInPlace(move);
+                }
+            });
+
+            // ── Controller interactions ────────────────────────
+            xr.input.onControllerAddedObservable.add((controller) => {
+                controller.onMotionControllerInitObservable.add((mc) => {
+
+                    // ── SQUEEZE: spawn quantum particle with muzzle flash
+                    const squeeze = mc.getComponent("xr-standard-squeeze");
+                    if (squeeze) {
+                        squeeze.onButtonStateChangedObservable.add((comp) => {
+                            if (comp.pressed) {
+                                const pos = controller.pointer.absolutePosition.clone();
+                                const fwd = controller.pointer.forward.clone();
+                                const spawnPos = pos.add(fwd.scale(0.3));
+
+                                // Muzzle flash
+                                const flash = BABYLON.MeshBuilder.CreateSphere("flash", {diameter:0.15, segments:6}, scene);
+                                flash.position = spawnPos.clone();
+                                const fMat = new BABYLON.StandardMaterial("fMat", scene);
+                                fMat.emissiveColor = new BABYLON.Color3(1,0.8,0.3);
+                                fMat.disableLighting = true;
+                                flash.material = fMat;
+                                let life = 1;
+                                const obs = scene.onBeforeRenderObservable.add(() => {
+                                    life -= 0.08;
+                                    flash.scaling.setAll(life);
+                                    fMat.alpha = life;
+                                    if (life <= 0) {
+                                        scene.onBeforeRenderObservable.remove(obs);
+                                        flash.dispose(); fMat.dispose();
+                                    }
+                                });
+
+                                // Quantum particle
+                                const particle = BABYLON.MeshBuilder.CreateSphere("qp", {diameter:0.2, segments:12}, scene);
+                                particle.position = spawnPos.clone();
+                                const pMat = new BABYLON.StandardMaterial("qpMat", scene);
+                                const hue = Math.random();
+                                pMat.diffuseColor = new BABYLON.Color3(
+                                    0.3+hue*0.7, 0.3+(1-hue)*0.5, 0.8
+                                );
+                                pMat.emissiveColor = pMat.diffuseColor.scale(0.4);
+                                particle.material = pMat;
+
+                                // Fly forward then fade
+                                const vel = fwd.scale(0.15);
+                                let pLife = 1;
+                                const pObs = scene.onBeforeRenderObservable.add(() => {
+                                    particle.position.addInPlace(vel);
+                                    vel.scaleInPlace(0.98);
+                                    pLife -= 0.008;
+                                    pMat.alpha = pLife;
+                                    particle.scaling.setAll(0.5 + (1-pLife)*0.5);
+                                    if (pLife <= 0) {
+                                        scene.onBeforeRenderObservable.remove(pObs);
+                                        particle.dispose(); pMat.dispose();
+                                    }
+                                });
+                            }
+                        });
+                    }
+
+                    // ── THUMBSTICK: left/right = prev/next scene, up/down = vertical
+                    const thumbstick = mc.getComponent("xr-standard-thumbstick");
+                    if (thumbstick) {
+                        let navCooldown = false;
+                        thumbstick.onAxisValueChangedObservable.add((axes) => {
+                            // Horizontal: scene navigation
+                            if (Math.abs(axes.x) > 0.7 && !navCooldown) {
+                                navCooldown = true;
+                                if (axes.x > 0.7) qvr.goTo(qvr.currentIndex + 1);
+                                else if (axes.x < -0.7) qvr.goTo(qvr.currentIndex - 1);
+                                setTimeout(() => { navCooldown = false; }, 800);
+                            }
+
+                            // Vertical: move up/down
+                            if (Math.abs(axes.y) > 0.3 && xr.baseExperience.camera) {
+                                xr.baseExperience.camera.position.y -= axes.y * VERTICAL_SPEED;
+                            }
+                        });
+                    }
+
+                    // ── A/X BUTTON: toggle info panel
+                    const aBtn = mc.getComponent("a-button") || mc.getComponent("x-button");
+                    if (aBtn) {
+                        aBtn.onButtonStateChangedObservable.add((comp) => {
+                            if (comp.pressed) {
+                                document.getElementById("info-panel").classList.toggle("hidden");
+                            }
+                        });
+                    }
+
+                    // ── B/Y BUTTON: next scene (quick advance)
+                    const bBtn = mc.getComponent("b-button") || mc.getComponent("y-button");
+                    if (bBtn) {
+                        let bCooldown = false;
+                        bBtn.onButtonStateChangedObservable.add((comp) => {
+                            if (comp.pressed && !bCooldown) {
+                                bCooldown = true;
+                                qvr.goTo(qvr.currentIndex + 1);
+                                setTimeout(() => { bCooldown = false; }, 1000);
+                            }
+                        });
+                    }
+
+                    // ── TRIGGER: interact (pick) with scene objects
+                    const trigger = mc.getComponent("xr-standard-trigger");
+                    if (trigger) {
+                        trigger.onButtonStateChangedObservable.add((comp) => {
+                            if (comp.pressed) {
+                                // Ray-pick from controller pointer
+                                const ray = new BABYLON.Ray(
+                                    controller.pointer.absolutePosition,
+                                    controller.pointer.forward,
+                                    20
+                                );
+                                const hit = scene.pickWithRay(ray);
+                                if (hit && hit.pickedMesh && hit.pickedMesh.actionManager) {
+                                    hit.pickedMesh.actionManager.processTrigger(
+                                        BABYLON.ActionManager.OnPickTrigger,
+                                        BABYLON.ActionEvent.CreateNew(hit.pickedMesh)
+                                    );
+                                }
+                            }
+                        });
+                    }
+                });
+            });
+        };
+
         qvr.transition = async function (callback) {
             const overlay = document.getElementById("transition-overlay");
             overlay.classList.add("active");
@@ -264,7 +454,7 @@
                 // Setup
                 await def.setup(scene, qvr);
 
-                // Try WebXR
+                // Try WebXR + controller/head interactions
                 try {
                     const ground = scene.getMeshByName("ground");
                     if (ground) {
@@ -272,6 +462,7 @@
                             floorMeshes: [ground],
                             disableTeleportation: false,
                         });
+                        qvr.setupXRInteractions(scene, qvr.xrHelper);
                     }
                 } catch (e) { /* WebXR not available */ }
 
