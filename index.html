@@ -38,7 +38,15 @@
 
     <div id="scene-menu" class="hidden"></div>
 
-    <!-- Scene scripts -->
+    <!-- QVR global must exist before scene scripts register against it -->
+    <script>
+    window.QVR = {
+        scenes: [],
+        register(def) { this.scenes.push(def); }
+    };
+    </script>
+
+    <!-- Scene scripts (each calls QVR.register) -->
     <script src="scenes/00-hub.js"></script>
     <script src="scenes/01-bit-vs-qubit.js"></script>
     <script src="scenes/02-superposition.js"></script>
@@ -46,8 +54,8 @@
     <script src="scenes/04-bloch-sphere.js"></script>
     <script src="scenes/05-quantum-gates.js"></script>
 
+    <!-- Boot: attach engine, utilities, and start first scene -->
     <script>
-    // ── Scene Manager ──────────────────────────────────────────
     (async function () {
         const canvas = document.getElementById("renderCanvas");
         const engine = new BABYLON.Engine(canvas, true, {
@@ -55,232 +63,218 @@
             stencil: true,
         });
 
+        // Extend QVR with engine and utilities now that Babylon is ready
+        const qvr = window.QVR;
+        qvr.engine = engine;
+        qvr.canvas = canvas;
+        qvr.currentIndex = -1;
+        qvr.currentScene = null;
+        qvr.xrHelper = null;
+
         // ── Shared utilities ───────────────────────────────────
-        const QVR = window.QVR = {
-            engine,
-            canvas,
-            scenes: [],
-            currentIndex: -1,
-            currentScene: null,
-            xrHelper: null,
 
-            // Starfield background shared across scenes
-            createStarfield(scene) {
-                // Skybox-like dark gradient
-                scene.clearColor = new BABYLON.Color4(0.01, 0.01, 0.04, 1);
+        qvr.createStarfield = function (scene) {
+            scene.clearColor = new BABYLON.Color4(0.01, 0.01, 0.04, 1);
 
-                // Stars as particles
-                const starParent = new BABYLON.TransformNode("stars", scene);
-                const starCount = 1500;
-                const SPS = new BABYLON.SolidParticleSystem("stars", scene, { isPickable: false });
-                const starModel = BABYLON.MeshBuilder.CreatePolyhedron("s", { size: 0.02, type: 0 }, scene);
-                SPS.addShape(starModel, starCount);
-                starModel.dispose();
-                const mesh = SPS.buildMesh();
-                mesh.parent = starParent;
+            const starParent = new BABYLON.TransformNode("stars", scene);
+            const SPS = new BABYLON.SolidParticleSystem("stars", scene, { isPickable: false });
+            const starModel = BABYLON.MeshBuilder.CreatePolyhedron("s", { size: 0.02, type: 0 }, scene);
+            SPS.addShape(starModel, 1500);
+            starModel.dispose();
+            const mesh = SPS.buildMesh();
+            mesh.parent = starParent;
 
-                SPS.initParticles = () => {
-                    for (let i = 0; i < SPS.nbParticles; i++) {
-                        const p = SPS.particles[i];
-                        const r = 30 + Math.random() * 70;
-                        const theta = Math.random() * Math.PI * 2;
-                        const phi = Math.acos(2 * Math.random() - 1);
-                        p.position.x = r * Math.sin(phi) * Math.cos(theta);
-                        p.position.y = r * Math.sin(phi) * Math.sin(theta);
-                        p.position.z = r * Math.cos(phi);
-                        const brightness = 0.3 + Math.random() * 0.7;
-                        p.color = new BABYLON.Color4(brightness, brightness, brightness * 1.1, 1);
-                        const s = 0.5 + Math.random() * 2;
-                        p.scaling.setAll(s);
+            SPS.initParticles = () => {
+                for (let i = 0; i < SPS.nbParticles; i++) {
+                    const p = SPS.particles[i];
+                    const r = 30 + Math.random() * 70;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    p.position.x = r * Math.sin(phi) * Math.cos(theta);
+                    p.position.y = r * Math.sin(phi) * Math.sin(theta);
+                    p.position.z = r * Math.cos(phi);
+                    const b = 0.3 + Math.random() * 0.7;
+                    p.color = new BABYLON.Color4(b, b, b * 1.1, 1);
+                    p.scaling.setAll(0.5 + Math.random() * 2);
+                }
+            };
+            SPS.initParticles();
+            SPS.setParticles();
+            SPS.isAlwaysVisible = true;
+
+            scene.onBeforeRenderObservable.add(() => {
+                starParent.rotation.y += 0.00005;
+                starParent.rotation.x += 0.00002;
+            });
+
+            const nebulaColors = [
+                new BABYLON.Color3(0.15, 0.05, 0.3),
+                new BABYLON.Color3(0.05, 0.1, 0.3),
+                new BABYLON.Color3(0.2, 0.02, 0.1),
+            ];
+            for (let i = 0; i < 3; i++) {
+                const nebula = BABYLON.MeshBuilder.CreatePlane("nebula" + i, { size: 40 + Math.random() * 30 }, scene);
+                nebula.position = new BABYLON.Vector3(
+                    (Math.random() - 0.5) * 60,
+                    (Math.random() - 0.5) * 40,
+                    30 + Math.random() * 40
+                );
+                nebula.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+                const mat = new BABYLON.StandardMaterial("nebMat" + i, scene);
+                mat.emissiveColor = nebulaColors[i];
+                mat.disableLighting = true;
+                mat.alpha = 0.06 + Math.random() * 0.06;
+                nebula.material = mat;
+            }
+            return starParent;
+        };
+
+        qvr.createLighting = function (scene) {
+            const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
+            hemi.intensity = 0.5;
+            hemi.diffuse = new BABYLON.Color3(0.7, 0.75, 1.0);
+            const point = new BABYLON.PointLight("point", new BABYLON.Vector3(3, 5, -3), scene);
+            point.intensity = 0.8;
+            point.diffuse = new BABYLON.Color3(0.9, 0.85, 1.0);
+            return { hemi, point };
+        };
+
+        qvr.createGlow = function (scene) {
+            const gl = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 32 });
+            gl.intensity = 0.6;
+            return gl;
+        };
+
+        qvr.createQubitSphere = function (name, diameter, color, scene) {
+            const sphere = BABYLON.MeshBuilder.CreateSphere(name, { diameter, segments: 32 }, scene);
+            const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
+            mat.diffuseColor = color;
+            mat.emissiveColor = color.scale(0.3);
+            mat.specularColor = new BABYLON.Color3(0.5, 0.5, 0.6);
+            mat.specularPower = 64;
+            sphere.material = mat;
+            return sphere;
+        };
+
+        qvr.createTextPlane = function (text, fontSize, width, scene) {
+            const h = width * 0.3;
+            const plane = BABYLON.MeshBuilder.CreatePlane("tp_" + Date.now() + Math.random(), { width, height: h }, scene);
+            const texW = 512, texH = Math.round(512 * 0.3);
+            const tex = new BABYLON.DynamicTexture("dt_" + Date.now(), { width: texW, height: texH }, scene);
+            const ctx = tex.getContext();
+            ctx.font = "bold " + fontSize + "px Segoe UI, system-ui, sans-serif";
+            ctx.fillStyle = "white";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(text, texW / 2, texH / 2);
+            tex.update();
+            const mat = new BABYLON.StandardMaterial("tm_" + Date.now(), scene);
+            mat.diffuseTexture = tex;
+            mat.emissiveTexture = tex;
+            mat.opacityTexture = tex;
+            mat.disableLighting = true;
+            mat.backFaceCulling = false;
+            plane.material = mat;
+            plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+            return plane;
+        };
+
+        qvr.transition = async function (callback) {
+            const overlay = document.getElementById("transition-overlay");
+            overlay.classList.add("active");
+            await new Promise(r => setTimeout(r, 600));
+            await callback();
+            await new Promise(r => setTimeout(r, 200));
+            overlay.classList.remove("active");
+        };
+
+        qvr.updateMenu = function () {
+            const menu = document.getElementById("scene-menu");
+            menu.innerHTML = "";
+
+            // Auto-generate tiers from scene count
+            const tiers = [
+                { label: "Hub", start: 0, end: 1 },
+                { label: "Foundations", start: 1, end: Math.min(6, qvr.scenes.length) },
+            ];
+            // If more scenes are added later, they'll appear under "More"
+            if (qvr.scenes.length > 6) {
+                tiers.push({ label: "More", start: 6, end: qvr.scenes.length });
+            }
+
+            tiers.forEach(tier => {
+                if (tier.start >= qvr.scenes.length) return;
+                const label = document.createElement("div");
+                label.className = "tier-label";
+                label.textContent = tier.label;
+                menu.appendChild(label);
+                for (let i = tier.start; i < Math.min(tier.end, qvr.scenes.length); i++) {
+                    const item = document.createElement("div");
+                    item.className = "menu-item" + (i === qvr.currentIndex ? " active" : "");
+                    item.innerHTML = '<span class="num">' + i + '</span> ' + qvr.scenes[i].title;
+                    item.onclick = ((idx) => () => {
+                        menu.classList.add("hidden");
+                        qvr.goTo(idx);
+                    })(i);
+                    menu.appendChild(item);
+                }
+            });
+        };
+
+        qvr.goTo = async function (index) {
+            if (index < 0 || index >= qvr.scenes.length) return;
+            if (index === qvr.currentIndex) return;
+
+            await qvr.transition(async () => {
+                // Cleanup old scene
+                if (qvr.currentScene) {
+                    if (qvr.scenes[qvr.currentIndex] && qvr.scenes[qvr.currentIndex].cleanup) {
+                        qvr.scenes[qvr.currentIndex].cleanup();
                     }
-                };
-                SPS.initParticles();
-                SPS.setParticles();
-                SPS.isAlwaysVisible = true;
-
-                // Slow rotation for ambiance
-                scene.onBeforeRenderObservable.add(() => {
-                    starParent.rotation.y += 0.00005;
-                    starParent.rotation.x += 0.00002;
-                });
-
-                // Nebula glow planes
-                const nebulaColors = [
-                    new BABYLON.Color3(0.15, 0.05, 0.3),
-                    new BABYLON.Color3(0.05, 0.1, 0.3),
-                    new BABYLON.Color3(0.2, 0.02, 0.1),
-                ];
-                for (let i = 0; i < 3; i++) {
-                    const nebula = BABYLON.MeshBuilder.CreatePlane("nebula" + i, { size: 40 + Math.random() * 30 }, scene);
-                    nebula.position = new BABYLON.Vector3(
-                        (Math.random() - 0.5) * 60,
-                        (Math.random() - 0.5) * 40,
-                        30 + Math.random() * 40
-                    );
-                    nebula.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-                    const mat = new BABYLON.StandardMaterial("nebMat" + i, scene);
-                    mat.emissiveColor = nebulaColors[i];
-                    mat.disableLighting = true;
-                    mat.alpha = 0.06 + Math.random() * 0.06;
-                    nebula.material = mat;
+                    qvr.currentScene.dispose();
+                    qvr.currentScene = null;
                 }
 
-                return starParent;
-            },
+                // Create new scene
+                const def = qvr.scenes[index];
+                const scene = new BABYLON.Scene(engine);
+                qvr.currentScene = scene;
+                qvr.currentIndex = index;
 
-            // Standard lighting setup
-            createLighting(scene) {
-                const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
-                hemi.intensity = 0.5;
-                hemi.diffuse = new BABYLON.Color3(0.7, 0.75, 1.0);
+                // Setup
+                await def.setup(scene, qvr);
 
-                const point = new BABYLON.PointLight("point", new BABYLON.Vector3(3, 5, -3), scene);
-                point.intensity = 0.8;
-                point.diffuse = new BABYLON.Color3(0.9, 0.85, 1.0);
-
-                return { hemi, point };
-            },
-
-            // Glow layer
-            createGlow(scene) {
-                const gl = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 32 });
-                gl.intensity = 0.6;
-                return gl;
-            },
-
-            // Create a glowing sphere (used for qubits)
-            createQubitSphere(name, diameter, color, scene) {
-                const sphere = BABYLON.MeshBuilder.CreateSphere(name, { diameter, segments: 32 }, scene);
-                const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
-                mat.diffuseColor = color;
-                mat.emissiveColor = color.scale(0.3);
-                mat.specularColor = new BABYLON.Color3(0.5, 0.5, 0.6);
-                mat.specularPower = 64;
-                sphere.material = mat;
-                return sphere;
-            },
-
-            // Floating text using dynamic texture
-            createTextPlane(text, fontSize, width, scene) {
-                const plane = BABYLON.MeshBuilder.CreatePlane("text_" + Date.now(), { width, height: width * 0.3 }, scene);
-                const tex = new BABYLON.DynamicTexture("dtex_" + Date.now(), { width: 512, height: Math.round(512 * 0.3) }, scene);
-                const ctx = tex.getContext();
-                ctx.font = `bold ${fontSize}px Segoe UI, system-ui, sans-serif`;
-                ctx.fillStyle = "white";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillText(text, 256, Math.round(512 * 0.15));
-                tex.update();
-                const mat = new BABYLON.StandardMaterial("tmat_" + Date.now(), scene);
-                mat.diffuseTexture = tex;
-                mat.emissiveTexture = tex;
-                mat.opacityTexture = tex;
-                mat.disableLighting = true;
-                mat.backFaceCulling = false;
-                plane.material = mat;
-                plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
-                return plane;
-            },
-
-            // Transition effect
-            async transition(callback) {
-                const overlay = document.getElementById("transition-overlay");
-                overlay.classList.add("active");
-                await new Promise(r => setTimeout(r, 600));
-                await callback();
-                await new Promise(r => setTimeout(r, 200));
-                overlay.classList.remove("active");
-            },
-
-            // Register a scene definition
-            register(def) {
-                // def: { id, title, subtitle, info, setup(scene, QVR), cleanup?() }
-                this.scenes.push(def);
-            },
-
-            // Navigate to scene by index
-            async goTo(index) {
-                if (index < 0 || index >= this.scenes.length) return;
-                if (index === this.currentIndex) return;
-
-                await this.transition(async () => {
-                    // Cleanup old scene
-                    if (this.currentScene) {
-                        if (this.scenes[this.currentIndex].cleanup) {
-                            this.scenes[this.currentIndex].cleanup();
-                        }
-                        this.currentScene.dispose();
-                        this.currentScene = null;
+                // Try WebXR
+                try {
+                    const ground = scene.getMeshByName("ground");
+                    if (ground) {
+                        qvr.xrHelper = await scene.createDefaultXRExperienceAsync({
+                            floorMeshes: [ground],
+                            disableTeleportation: false,
+                        });
                     }
+                } catch (e) { /* WebXR not available */ }
 
-                    // Create new scene
-                    const def = this.scenes[index];
-                    const scene = new BABYLON.Scene(engine);
-                    this.currentScene = scene;
-                    this.currentIndex = index;
+                // Update HUD
+                document.getElementById("scene-title").textContent = def.title || "";
+                document.getElementById("scene-subtitle").textContent = def.subtitle || "";
+                document.getElementById("info-title").textContent = def.title || "";
+                document.getElementById("info-text").textContent = def.info || "";
+                document.getElementById("prevBtn").disabled = index === 0;
+                document.getElementById("nextBtn").disabled = index === qvr.scenes.length - 1;
 
-                    // Setup
-                    await def.setup(scene, this);
+                // Update menu
+                qvr.updateMenu();
 
-                    // Try WebXR
-                    try {
-                        const ground = scene.getMeshByName("ground");
-                        if (ground) {
-                            this.xrHelper = await scene.createDefaultXRExperienceAsync({
-                                floorMeshes: [ground],
-                                disableTeleportation: false,
-                            });
-                        }
-                    } catch (e) {
-                        // WebXR not available
-                    }
-
-                    // Update HUD
-                    document.getElementById("scene-title").textContent = def.title;
-                    document.getElementById("scene-subtitle").textContent = def.subtitle || "";
-                    document.getElementById("info-title").textContent = def.title;
-                    document.getElementById("info-text").textContent = def.info || "";
-                    document.getElementById("prevBtn").disabled = index === 0;
-                    document.getElementById("nextBtn").disabled = index === this.scenes.length - 1;
-
-                    // Update menu
-                    this.updateMenu();
-
-                    // Start render
-                    engine.stopRenderLoop();
-                    engine.runRenderLoop(() => scene.render());
-                });
-            },
-
-            updateMenu() {
-                const menu = document.getElementById("scene-menu");
-                menu.innerHTML = "";
-                const tiers = [
-                    { label: "Hub", start: 0, end: 1 },
-                    { label: "Foundations", start: 1, end: 6 },
-                ];
-                tiers.forEach(tier => {
-                    const label = document.createElement("div");
-                    label.className = "tier-label";
-                    label.textContent = tier.label;
-                    menu.appendChild(label);
-                    for (let i = tier.start; i < Math.min(tier.end, this.scenes.length); i++) {
-                        const item = document.createElement("div");
-                        item.className = "menu-item" + (i === this.currentIndex ? " active" : "");
-                        item.innerHTML = `<span class="num">${i}</span> ${this.scenes[i].title}`;
-                        item.onclick = () => {
-                            menu.classList.add("hidden");
-                            this.goTo(i);
-                        };
-                        menu.appendChild(item);
-                    }
-                });
-            }
+                // Start render
+                engine.stopRenderLoop();
+                engine.runRenderLoop(() => scene.render());
+            });
         };
 
         // ── HUD event handlers ─────────────────────────────────
-        document.getElementById("prevBtn").onclick = () => QVR.goTo(QVR.currentIndex - 1);
-        document.getElementById("nextBtn").onclick = () => QVR.goTo(QVR.currentIndex + 1);
+        document.getElementById("prevBtn").onclick = () => qvr.goTo(qvr.currentIndex - 1);
+        document.getElementById("nextBtn").onclick = () => qvr.goTo(qvr.currentIndex + 1);
 
         const menuEl = document.getElementById("scene-menu");
         document.getElementById("menuBtn").onclick = () => menuEl.classList.toggle("hidden");
@@ -288,24 +282,26 @@
         const infoPanel = document.getElementById("info-panel");
         document.getElementById("info-toggle").onclick = () => infoPanel.classList.toggle("hidden");
 
-        // Close menu on outside click
         document.addEventListener("click", (e) => {
             if (!menuEl.contains(e.target) && e.target.id !== "menuBtn") {
                 menuEl.classList.add("hidden");
             }
         });
 
-        // ── Keyboard nav ───────────────────────────────────────
+        // Keyboard nav
         document.addEventListener("keydown", (e) => {
-            if (e.key === "ArrowRight" || e.key === "n") QVR.goTo(QVR.currentIndex + 1);
-            if (e.key === "ArrowLeft" || e.key === "p") QVR.goTo(QVR.currentIndex - 1);
+            if (e.key === "ArrowRight" || e.key === "n") qvr.goTo(qvr.currentIndex + 1);
+            if (e.key === "ArrowLeft" || e.key === "p") qvr.goTo(qvr.currentIndex - 1);
             if (e.key === "i") infoPanel.classList.toggle("hidden");
         });
 
-        // ── Init ───────────────────────────────────────────────
+        // ── Boot ───────────────────────────────────────────────
         window.addEventListener("resize", () => engine.resize());
-        await QVR.goTo(0);
 
+        console.log("QVR: " + qvr.scenes.length + " scenes registered");
+        if (qvr.scenes.length > 0) {
+            await qvr.goTo(0);
+        }
     })();
     </script>
 </body>
