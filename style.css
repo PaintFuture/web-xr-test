@@ -122,6 +122,12 @@ html, body {
     right: 16px;
     z-index: 10;
 }
+#mute-toggle {
+    position: absolute;
+    bottom: 16px;
+    right: 80px;
+    z-index: 10;
+}
 
 /* ── Scene menu ─────────────────────────────── */
 #scene-menu {

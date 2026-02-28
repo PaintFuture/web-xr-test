@@ -36,7 +36,16 @@
         color: #fff; backdrop-filter: blur(6px);
     ">? Info</button>
 
+    <button id="mute-toggle" class="hud-btn" style="
+        padding: 8px 12px; font-size: 16px; border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 6px; cursor: pointer; background: rgba(255,255,255,0.1);
+        color: #fff; backdrop-filter: blur(6px); min-width: 40px;
+    " title="Toggle sound">&#x1f50a;</button>
+
     <div id="scene-menu" class="hidden"></div>
+
+    <!-- Audio system (procedural Web Audio synthesis) -->
+    <script src="audio.js"></script>
 
     <!-- QVR global must exist before scene scripts register against it -->
     <script>
@@ -299,6 +308,11 @@
             // Left:  trigger, squeeze, thumbstick, x-button, y-button
             // Right: trigger, squeeze, thumbstick, a-button, b-button
 
+            // Start audio when entering XR
+            xr.baseExperience.onStateChangedObservable.add((state) => {
+                if (state === BABYLON.WebXRState.IN_XR) ensureAudio();
+            });
+
             xr.input.onControllerAddedObservable.add((controller) => {
                 controller.onMotionControllerInitObservable.add((mc) => {
                     const hand = mc.handedness; // "left" or "right"
@@ -308,6 +322,7 @@
                     if (squeeze) {
                         squeeze.onButtonStateChangedObservable.add((comp) => {
                             if (comp.pressed) {
+                                QAudio.playParticleSpawn();
                                 const pos = controller.pointer.absolutePosition.clone();
                                 const fwd = controller.pointer.forward.clone();
                                 const spawnPos = pos.add(fwd.scale(0.3));
@@ -370,6 +385,7 @@
                                 );
                                 const hit = scene.pickWithRay(ray);
                                 if (hit && hit.pickedMesh && hit.pickedMesh.actionManager) {
+                                    QAudio.playClick();
                                     hit.pickedMesh.actionManager.processTrigger(
                                         BABYLON.ActionManager.OnPickTrigger,
                                         BABYLON.ActionEvent.CreateNew(hit.pickedMesh)
@@ -405,6 +421,7 @@
                         if (xBtn) {
                             xBtn.onButtonStateChangedObservable.add((comp) => {
                                 if (comp.pressed) {
+                                    QAudio.playPing();
                                     document.getElementById("info-panel").classList.toggle("hidden");
                                 }
                             });
@@ -433,6 +450,7 @@
                         if (aBtn) {
                             aBtn.onButtonStateChangedObservable.add((comp) => {
                                 if (comp.pressed) {
+                                    QAudio.playPing();
                                     document.getElementById("info-panel").classList.toggle("hidden");
                                 }
                             });
@@ -458,8 +476,10 @@
         qvr.transition = async function (callback) {
             const overlay = document.getElementById("transition-overlay");
             overlay.classList.add("active");
+            QAudio.playTransition();
             await new Promise(r => setTimeout(r, 600));
             await callback();
+            QAudio.playSceneChime();
             await new Promise(r => setTimeout(r, 200));
             overlay.classList.remove("active");
         };
@@ -549,15 +569,37 @@
             });
         };
 
+        // ── Audio init (requires user gesture) ─────────────────
+        let audioStarted = false;
+        function ensureAudio() {
+            if (audioStarted) { QAudio.resume(); return; }
+            audioStarted = true;
+            QAudio.init();
+            QAudio.startAmbient();
+        }
+        // Start audio on first click/touch/XR session
+        const startAudioOnce = () => { ensureAudio(); document.removeEventListener("click", startAudioOnce); document.removeEventListener("touchstart", startAudioOnce); };
+        document.addEventListener("click", startAudioOnce);
+        document.addEventListener("touchstart", startAudioOnce);
+
+        // Mute toggle
+        const muteBtn = document.getElementById("mute-toggle");
+        muteBtn.onclick = (e) => {
+            e.stopPropagation();
+            ensureAudio();
+            QAudio.toggleMute();
+            muteBtn.innerHTML = QAudio.isMuted() ? "&#x1f507;" : "&#x1f50a;";
+        };
+
         // ── HUD event handlers ─────────────────────────────────
         document.getElementById("prevBtn").onclick = () => qvr.goTo(qvr.currentIndex - 1);
         document.getElementById("nextBtn").onclick = () => qvr.goTo(qvr.currentIndex + 1);
 
         const menuEl = document.getElementById("scene-menu");
-        document.getElementById("menuBtn").onclick = () => menuEl.classList.toggle("hidden");
+        document.getElementById("menuBtn").onclick = () => { menuEl.classList.toggle("hidden"); QAudio.playPing(); };
 
         const infoPanel = document.getElementById("info-panel");
-        document.getElementById("info-toggle").onclick = () => infoPanel.classList.toggle("hidden");
+        document.getElementById("info-toggle").onclick = () => { infoPanel.classList.toggle("hidden"); QAudio.playPing(); };
 
         document.addEventListener("click", (e) => {
             if (!menuEl.contains(e.target) && e.target.id !== "menuBtn") {
@@ -570,6 +612,7 @@
             if (e.key === "ArrowRight" || e.key === "n") qvr.goTo(qvr.currentIndex + 1);
             if (e.key === "ArrowLeft" || e.key === "p") qvr.goTo(qvr.currentIndex - 1);
             if (e.key === "i") infoPanel.classList.toggle("hidden");
+            if (e.key === "m") muteBtn.click();
         });
 
         // ── Boot ───────────────────────────────────────────────
