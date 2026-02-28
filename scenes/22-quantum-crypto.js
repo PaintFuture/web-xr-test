@@ -65,12 +65,12 @@ QVR.register({
             const ctx = stTex.getContext();
             ctx.clearRect(0,0,640,192);
             ctx.textAlign = "center";
-            ctx.font = "20px monospace"; ctx.fillStyle = "#aabbff";
+            ctx.font = "bold 20px monospace"; ctx.fillStyle = "#aabbff";
             ctx.fillText("Key bits exchanged: " + keyBits.length, 320, 30);
             const errRate = keyBits.length > 0 ? (errors/keyBits.length*100).toFixed(1) : "0.0";
             ctx.fillStyle = errors > keyBits.length*0.15 ? "#ff4444" : "#44ff88";
             ctx.fillText("Error rate: " + errRate + "%", 320, 60);
-            ctx.fillStyle = "#8899bb"; ctx.font = "16px sans-serif";
+            ctx.fillStyle = "#8899bb"; ctx.font = "bold 16px sans-serif";
             if (errors > keyBits.length * 0.15 && keyBits.length > 5) {
                 ctx.fillStyle = "#ff4444";
                 ctx.fillText("HIGH ERROR RATE — Eavesdropper detected!", 320, 95);
@@ -79,7 +79,7 @@ QVR.register({
                 ctx.fillStyle = "#44ff88";
                 ctx.fillText("Channel secure. Key is safe to use.", 320, 95);
             }
-            ctx.fillStyle = "#667799"; ctx.font = "14px sans-serif";
+            ctx.fillStyle = "#667799"; ctx.font = "bold 14px sans-serif";
             ctx.fillText("Eve: " + (eveActive ? "ACTIVE (intercepting)" : "inactive"), 320, 150);
             stTex.update();
         }

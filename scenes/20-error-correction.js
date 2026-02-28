@@ -62,11 +62,11 @@ QVR.register({
             const ctx = stTex.getContext();
             ctx.clearRect(0,0,512,150);
             ctx.textAlign = "center";
-            ctx.font = "20px sans-serif"; ctx.fillStyle = color || "#aabbff";
+            ctx.font = "bold 20px sans-serif"; ctx.fillStyle = color || "#aabbff";
             ctx.fillText(line1, 256, 40);
-            ctx.fillStyle = "#8899bb"; ctx.font = "16px sans-serif";
+            ctx.fillStyle = "#8899bb"; ctx.font = "bold 16px sans-serif";
             ctx.fillText(line2, 256, 70);
-            ctx.fillStyle = "#88ddaa"; ctx.font = "16px monospace";
+            ctx.fillStyle = "#88ddaa"; ctx.font = "bold 16px monospace";
             ctx.fillText("Errors corrected: " + errorsFixed, 256, 105);
             stTex.update();
         }

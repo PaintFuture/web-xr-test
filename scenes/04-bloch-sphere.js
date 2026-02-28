@@ -114,7 +114,7 @@ QVR.register({
         function updateInfo() {
             const ctx = infoTex.getContext();
             ctx.clearRect(0, 0, 512, 256);
-            ctx.font = "22px monospace";
+            ctx.font = "bold 22px monospace";
             ctx.fillStyle = "#aabbff";
 
             const p0 = Math.cos(theta / 2) ** 2;
@@ -126,7 +126,7 @@ QVR.register({
             ctx.fillText(`P(|0⟩) = ${(p0 * 100).toFixed(1)}%`, 20, 120);
             ctx.fillText(`P(|1⟩) = ${(p1 * 100).toFixed(1)}%`, 20, 155);
             ctx.fillStyle = "#667799";
-            ctx.font = "16px sans-serif";
+            ctx.font = "bold 16px sans-serif";
             ctx.fillText(`α = cos(θ/2) = ${Math.cos(theta / 2).toFixed(3)}`, 20, 200);
             ctx.fillText(`β = sin(θ/2)·e^(iφ) = ${Math.sin(theta / 2).toFixed(3)}`, 20, 225);
             infoTex.update();

@@ -240,7 +240,7 @@ QVR.register({
             const ctx = outTex.getContext();
             ctx.clearRect(0, 0, 384, 100);
             ctx.textAlign = "center";
-            ctx.font = "20px monospace";
+            ctx.font = "bold 20px monospace";
             ctx.fillStyle = "#aabbff";
             ctx.fillText(text, 192, 50);
             outTex.update();

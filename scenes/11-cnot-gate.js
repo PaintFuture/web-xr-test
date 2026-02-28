@@ -57,7 +57,7 @@ QVR.register({
             }
             const ctx = stTex.getContext();
             ctx.clearRect(0,0,512,128);
-            ctx.textAlign = "center"; ctx.font = "24px monospace"; ctx.fillStyle = "#aabbff";
+            ctx.textAlign = "center"; ctx.font = "bold 24px monospace"; ctx.fillStyle = "#aabbff";
             if (superposition) {
                 ctx.fillText("Control: |0⟩+|1⟩  (superposition)", 256, 40);
                 ctx.fillText("State: |00⟩+|11⟩  (entangled!)", 256, 80);

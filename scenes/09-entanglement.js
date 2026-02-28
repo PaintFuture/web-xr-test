@@ -123,14 +123,14 @@ QVR.register({
             const ctx = tallyTex.getContext();
             ctx.clearRect(0, 0, 384, 100);
             ctx.textAlign = "center";
-            ctx.font = "20px monospace";
+            ctx.font = "bold 20px monospace";
             ctx.fillStyle = "#aabbff";
             if (tally.total > 0) {
                 ctx.fillText("Correlated: " + tally.same + "/" + tally.total +
                     " (" + (tally.same / tally.total * 100).toFixed(0) + "%)", 192, 40);
             }
             ctx.fillStyle = "#667799";
-            ctx.font = "16px sans-serif";
+            ctx.font = "bold 16px sans-serif";
             ctx.fillText(entangled ? "Entangled (Bell state |Φ+⟩)" : "Independent", 192, 70);
             tallyTex.update();
         }
@@ -153,7 +153,7 @@ QVR.register({
             const ctx = statusTex.getContext();
             ctx.clearRect(0, 0, 384, 80);
             ctx.textAlign = "center";
-            ctx.font = "22px sans-serif";
+            ctx.font = "bold 22px sans-serif";
             ctx.fillStyle = color || "#aabbff";
             ctx.fillText(text, 192, 45);
             statusTex.update();

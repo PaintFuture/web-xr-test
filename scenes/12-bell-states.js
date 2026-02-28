@@ -55,9 +55,9 @@ QVR.register({
             ctx.textAlign = "center";
             ctx.font = "bold 28px monospace"; ctx.fillStyle = "#aabbff";
             ctx.fillText(bs.name, 256, 35);
-            ctx.font = "20px sans-serif"; ctx.fillStyle = "#8899bb";
+            ctx.font = "bold 20px sans-serif"; ctx.fillStyle = "#8899bb";
             ctx.fillText(bs.desc, 256, 70);
-            ctx.font = "18px monospace"; ctx.fillStyle = "#88ddaa";
+            ctx.font = "bold 18px monospace"; ctx.fillStyle = "#88ddaa";
             if (stats.total > 0) {
                 ctx.fillText("Measurements: " + stats.total + "  Same: " + stats.same + "  Opp: " + stats.opp, 256, 110);
                 const pct = bs.corr === "same" ? (stats.same/stats.total*100).toFixed(0) : (stats.opp/stats.total*100).toFixed(0);

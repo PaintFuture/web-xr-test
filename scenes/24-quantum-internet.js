@@ -89,9 +89,9 @@ QVR.register({
         function updateStatus() {
             const ctx = stTex.getContext();
             ctx.clearRect(0,0,512,100);
-            ctx.textAlign = "center"; ctx.font = "18px sans-serif"; ctx.fillStyle = "#aabbff";
+            ctx.textAlign = "center"; ctx.font = "bold 18px sans-serif"; ctx.fillStyle = "#aabbff";
             ctx.fillText("Entanglement links: " + links.length + " | Click two nodes to connect", 256, 35);
-            ctx.fillStyle = "#667799"; ctx.font = "14px sans-serif";
+            ctx.fillStyle = "#667799"; ctx.font = "bold 14px sans-serif";
             ctx.fillText("Each link = shared entangled pair for secure communication", 256, 65);
             stTex.update();
         }

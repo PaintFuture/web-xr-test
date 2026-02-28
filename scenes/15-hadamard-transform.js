@@ -77,9 +77,9 @@ QVR.register({
         function updateInfo() {
             const ctx = infoTex.getContext();
             ctx.clearRect(0,0,512,128);
-            ctx.textAlign = "center"; ctx.font = "24px monospace"; ctx.fillStyle = "#aabbff";
+            ctx.textAlign = "center"; ctx.font = "bold 24px monospace"; ctx.fillStyle = "#aabbff";
             ctx.fillText(N + " qubits → " + Math.pow(2,N) + " states", 256, 40);
-            ctx.font = "18px sans-serif"; ctx.fillStyle = applied ? "#44ff88" : "#8899bb";
+            ctx.font = "bold 18px sans-serif"; ctx.fillStyle = applied ? "#44ff88" : "#8899bb";
             ctx.fillText(applied ? "All states loaded simultaneously!" : "All qubits in |0⟩ — only one state", 256, 75);
             infoTex.update();
         }

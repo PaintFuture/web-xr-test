@@ -72,9 +72,9 @@ QVR.register({
             const ctx = enTex.getContext();
             ctx.clearRect(0,0,512,150);
             ctx.textAlign = "center";
-            ctx.font = "22px monospace"; ctx.fillStyle = docked ? "#44ff88" : "#aabbff";
+            ctx.font = "bold 22px monospace"; ctx.fillStyle = docked ? "#44ff88" : "#aabbff";
             ctx.fillText("Binding Energy: " + energy.toFixed(1) + " kcal/mol", 256, 35);
-            ctx.font = "16px sans-serif"; ctx.fillStyle = "#8899bb";
+            ctx.font = "bold 16px sans-serif"; ctx.fillStyle = "#8899bb";
             ctx.fillText(docked ? "Strong binding! Drug candidate viable." : "Click DOCK to simulate quantum binding", 256, 70);
             ctx.fillText("Classical: ~months | Quantum: ~minutes", 256, 100);
             enTex.update();

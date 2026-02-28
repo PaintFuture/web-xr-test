@@ -81,12 +81,12 @@ QVR.register({
             const ctx = infoTex.getContext();
             ctx.clearRect(0,0,512,150);
             ctx.textAlign = "center";
-            ctx.font = "22px monospace"; ctx.fillStyle = "#aabbff";
+            ctx.font = "bold 22px monospace"; ctx.fillStyle = "#aabbff";
             ctx.fillText("Iteration: " + iteration + " / ~" + optimalIter + " optimal", 256, 35);
             const prob = (amplitudes[target]**2 * 100).toFixed(1);
-            ctx.font = "20px sans-serif"; ctx.fillStyle = "#88ddaa";
+            ctx.font = "bold 20px sans-serif"; ctx.fillStyle = "#88ddaa";
             ctx.fillText("Target probability: " + prob + "%", 256, 70);
-            ctx.fillStyle = "#667799"; ctx.font = "16px sans-serif";
+            ctx.fillStyle = "#667799"; ctx.font = "bold 16px sans-serif";
             ctx.fillText("Classical would need ~" + N + " checks on average", 256, 100);
             if (iteration >= optimalIter) {
                 ctx.fillStyle = "#ffaa44";

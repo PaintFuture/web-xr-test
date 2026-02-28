@@ -167,7 +167,7 @@ QVR.register({
             // Phase label
             const ctx = phaseTex.getContext();
             ctx.clearRect(0, 0, 256, 80);
-            ctx.font = "22px monospace";
+            ctx.font = "bold 22px monospace";
             ctx.fillStyle = "#bbaaff";
             ctx.textAlign = "center";
             const deg = ((phase * 180 / Math.PI) % 360).toFixed(0);

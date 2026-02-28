@@ -62,7 +62,7 @@ QVR.register({
         function setStatus(text, color) {
             const ctx = stTex.getContext();
             ctx.clearRect(0,0,640,100);
-            ctx.textAlign = "center"; ctx.font = "22px sans-serif"; ctx.fillStyle = color || "#aabbff";
+            ctx.textAlign = "center"; ctx.font = "bold 22px sans-serif"; ctx.fillStyle = color || "#aabbff";
             ctx.fillText(text, 320, 55);
             stTex.update();
         }

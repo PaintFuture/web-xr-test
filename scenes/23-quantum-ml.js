@@ -73,7 +73,7 @@ QVR.register({
         function updateLabel() {
             const ctx = stTex.getContext();
             ctx.clearRect(0,0,512,100);
-            ctx.textAlign = "center"; ctx.font = "22px sans-serif";
+            ctx.textAlign = "center"; ctx.font = "bold 22px sans-serif";
             ctx.fillStyle = mapped ? "#44ff88" : "#aabbff";
             ctx.fillText(mapped ? "Quantum 3D (linearly separable!)" : "", 256, 50);
             stTex.update();

@@ -177,23 +177,56 @@
         };
 
         qvr.createTextPlane = function (text, fontSize, width, scene) {
-            const h = width * 0.3;
+            const h = width * 0.35;
             const plane = BABYLON.MeshBuilder.CreatePlane("tp_" + Date.now() + Math.random(), { width, height: h }, scene);
-            const texW = 512, texH = Math.round(512 * 0.3);
+            // Higher res texture for VR readability
+            const texW = 1024, texH = Math.round(1024 * 0.35);
+            const scaledFont = Math.round(fontSize * (1024 / 512));
             const tex = new BABYLON.DynamicTexture("dt_" + Date.now(), { width: texW, height: texH }, scene);
             const ctx = tex.getContext();
-            ctx.font = "bold " + fontSize + "px Segoe UI, system-ui, sans-serif";
-            ctx.fillStyle = "white";
+            // Dark background pill for contrast
+            const pad = 12;
+            ctx.fillStyle = "rgba(5, 5, 20, 0.65)";
+            const metrics = (function () {
+                ctx.font = "bold " + scaledFont + "px Segoe UI, system-ui, sans-serif";
+                return ctx.measureText(text);
+            })();
+            const bgW = Math.min(metrics.width + pad * 4, texW);
+            const bgH = scaledFont + pad * 2;
+            const bgX = (texW - bgW) / 2;
+            const bgY = (texH - bgH) / 2;
+            // Rounded rect
+            const r = 10;
+            ctx.beginPath();
+            ctx.moveTo(bgX + r, bgY);
+            ctx.lineTo(bgX + bgW - r, bgY);
+            ctx.quadraticCurveTo(bgX + bgW, bgY, bgX + bgW, bgY + r);
+            ctx.lineTo(bgX + bgW, bgY + bgH - r);
+            ctx.quadraticCurveTo(bgX + bgW, bgY + bgH, bgX + bgW - r, bgY + bgH);
+            ctx.lineTo(bgX + r, bgY + bgH);
+            ctx.quadraticCurveTo(bgX, bgY + bgH, bgX, bgY + bgH - r);
+            ctx.lineTo(bgX, bgY + r);
+            ctx.quadraticCurveTo(bgX, bgY, bgX + r, bgY);
+            ctx.closePath();
+            ctx.fill();
+            // Text with stroke for boldness
+            ctx.font = "bold " + scaledFont + "px Segoe UI, system-ui, sans-serif";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
+            ctx.strokeStyle = "rgba(0,0,0,0.6)";
+            ctx.lineWidth = 3;
+            ctx.strokeText(text, texW / 2, texH / 2);
+            ctx.fillStyle = "#ffffff";
             ctx.fillText(text, texW / 2, texH / 2);
             tex.update();
+            tex.hasAlpha = true;
             const mat = new BABYLON.StandardMaterial("tm_" + Date.now(), scene);
             mat.diffuseTexture = tex;
             mat.emissiveTexture = tex;
             mat.opacityTexture = tex;
             mat.disableLighting = true;
             mat.backFaceCulling = false;
+            mat.useAlphaFromDiffuseTexture = true;
             plane.material = mat;
             plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
             return plane;
@@ -249,7 +282,7 @@
                 if (Math.abs(deltaPitch) > DEADZONE_RAD) {
                     const intensity = (Math.abs(deltaPitch) - DEADZONE_RAD) * 3;
                     const speed = Math.min(intensity, 1) * FLY_SPEED;
-                    const direction = deltaPitch < 0 ? 1 : -1; // lean forward = move forward
+                    const direction = deltaPitch < 0 ? -1 : 1; // pitch down = forward, pitch up = backward
 
                     // Get forward direction from camera (horizontal only)
                     const forward = cam.getForwardRay().direction;
@@ -262,10 +295,15 @@
             });
 
             // ── Controller interactions ────────────────────────
+            // Pico 4 Ultra profile: pico-4u
+            // Left:  trigger, squeeze, thumbstick, x-button, y-button
+            // Right: trigger, squeeze, thumbstick, a-button, b-button
+
             xr.input.onControllerAddedObservable.add((controller) => {
                 controller.onMotionControllerInitObservable.add((mc) => {
+                    const hand = mc.handedness; // "left" or "right"
 
-                    // ── SQUEEZE: spawn quantum particle with muzzle flash
+                    // ── BOTH HANDS — SQUEEZE: spawn quantum particle + muzzle flash
                     const squeeze = mc.getComponent("xr-standard-squeeze");
                     if (squeeze) {
                         squeeze.onButtonStateChangedObservable.add((comp) => {
@@ -303,7 +341,6 @@
                                 pMat.emissiveColor = pMat.diffuseColor.scale(0.4);
                                 particle.material = pMat;
 
-                                // Fly forward then fade
                                 const vel = fwd.scale(0.15);
                                 let pLife = 1;
                                 const pObs = scene.onBeforeRenderObservable.add(() => {
@@ -321,55 +358,11 @@
                         });
                     }
 
-                    // ── THUMBSTICK: left/right = prev/next scene, up/down = vertical
-                    const thumbstick = mc.getComponent("xr-standard-thumbstick");
-                    if (thumbstick) {
-                        let navCooldown = false;
-                        thumbstick.onAxisValueChangedObservable.add((axes) => {
-                            // Horizontal: scene navigation
-                            if (Math.abs(axes.x) > 0.7 && !navCooldown) {
-                                navCooldown = true;
-                                if (axes.x > 0.7) qvr.goTo(qvr.currentIndex + 1);
-                                else if (axes.x < -0.7) qvr.goTo(qvr.currentIndex - 1);
-                                setTimeout(() => { navCooldown = false; }, 800);
-                            }
-
-                            // Vertical: move up/down
-                            if (Math.abs(axes.y) > 0.3 && xr.baseExperience.camera) {
-                                xr.baseExperience.camera.position.y -= axes.y * VERTICAL_SPEED;
-                            }
-                        });
-                    }
-
-                    // ── A/X BUTTON: toggle info panel
-                    const aBtn = mc.getComponent("a-button") || mc.getComponent("x-button");
-                    if (aBtn) {
-                        aBtn.onButtonStateChangedObservable.add((comp) => {
-                            if (comp.pressed) {
-                                document.getElementById("info-panel").classList.toggle("hidden");
-                            }
-                        });
-                    }
-
-                    // ── B/Y BUTTON: next scene (quick advance)
-                    const bBtn = mc.getComponent("b-button") || mc.getComponent("y-button");
-                    if (bBtn) {
-                        let bCooldown = false;
-                        bBtn.onButtonStateChangedObservable.add((comp) => {
-                            if (comp.pressed && !bCooldown) {
-                                bCooldown = true;
-                                qvr.goTo(qvr.currentIndex + 1);
-                                setTimeout(() => { bCooldown = false; }, 1000);
-                            }
-                        });
-                    }
-
-                    // ── TRIGGER: interact (pick) with scene objects
+                    // ── BOTH HANDS — TRIGGER: interact with scene objects
                     const trigger = mc.getComponent("xr-standard-trigger");
                     if (trigger) {
                         trigger.onButtonStateChangedObservable.add((comp) => {
                             if (comp.pressed) {
-                                // Ray-pick from controller pointer
                                 const ray = new BABYLON.Ray(
                                     controller.pointer.absolutePosition,
                                     controller.pointer.forward,
@@ -384,6 +377,79 @@
                                 }
                             }
                         });
+                    }
+
+                    // ── LEFT THUMBSTICK: scene navigation + vertical movement
+                    // (Right thumbstick is used by Babylon's teleportation system)
+                    if (hand === "left") {
+                        const thumbstick = mc.getComponent("xr-standard-thumbstick");
+                        if (thumbstick) {
+                            let navCooldown = false;
+                            thumbstick.onAxisValueChangedObservable.add((axes) => {
+                                // Left/right: prev/next scene
+                                if (Math.abs(axes.x) > 0.7 && !navCooldown) {
+                                    navCooldown = true;
+                                    if (axes.x > 0.7) qvr.goTo(qvr.currentIndex + 1);
+                                    else if (axes.x < -0.7) qvr.goTo(qvr.currentIndex - 1);
+                                    setTimeout(() => { navCooldown = false; }, 800);
+                                }
+                                // Up/down: vertical movement
+                                if (Math.abs(axes.y) > 0.3 && xr.baseExperience.camera) {
+                                    xr.baseExperience.camera.position.y -= axes.y * VERTICAL_SPEED;
+                                }
+                            });
+                        }
+
+                        // ── X BUTTON (left): toggle info panel
+                        const xBtn = mc.getComponent("x-button");
+                        if (xBtn) {
+                            xBtn.onButtonStateChangedObservable.add((comp) => {
+                                if (comp.pressed) {
+                                    document.getElementById("info-panel").classList.toggle("hidden");
+                                }
+                            });
+                        }
+
+                        // ── Y BUTTON (left): previous scene
+                        const yBtn = mc.getComponent("y-button");
+                        if (yBtn) {
+                            let yCooldown = false;
+                            yBtn.onButtonStateChangedObservable.add((comp) => {
+                                if (comp.pressed && !yCooldown) {
+                                    yCooldown = true;
+                                    qvr.goTo(qvr.currentIndex - 1);
+                                    setTimeout(() => { yCooldown = false; }, 1000);
+                                }
+                            });
+                        }
+                    }
+
+                    // ── RIGHT HAND
+                    if (hand === "right") {
+                        // Right thumbstick: left by Babylon for teleportation/snap-turn
+
+                        // ── A BUTTON (right): toggle info panel
+                        const aBtn = mc.getComponent("a-button");
+                        if (aBtn) {
+                            aBtn.onButtonStateChangedObservable.add((comp) => {
+                                if (comp.pressed) {
+                                    document.getElementById("info-panel").classList.toggle("hidden");
+                                }
+                            });
+                        }
+
+                        // ── B BUTTON (right): next scene
+                        const bBtn = mc.getComponent("b-button");
+                        if (bBtn) {
+                            let bCooldown = false;
+                            bBtn.onButtonStateChangedObservable.add((comp) => {
+                                if (comp.pressed && !bCooldown) {
+                                    bCooldown = true;
+                                    qvr.goTo(qvr.currentIndex + 1);
+                                    setTimeout(() => { bCooldown = false; }, 1000);
+                                }
+                            });
+                        }
                     }
                 });
             });

@@ -79,12 +79,12 @@ QVR.register({
             const ctx = stTex.getContext();
             ctx.clearRect(0,0,640,128);
             ctx.textAlign = "center";
-            ctx.font = "20px monospace"; ctx.fillStyle = "#aabbff";
+            ctx.font = "bold 20px monospace"; ctx.fillStyle = "#aabbff";
             ctx.fillText("Classical: " + (classicalProgress*100).toFixed(1) + "% (est: millions of years)", 320, 35);
             ctx.fillStyle = "#88ddaa";
             ctx.fillText("Quantum: " + (quantumProgress*100).toFixed(1) + "% (est: hours)", 320, 65);
             if (quantumProgress >= 1) {
-                ctx.fillStyle = "#44ff88"; ctx.font = "22px sans-serif";
+                ctx.fillStyle = "#44ff88"; ctx.font = "bold 22px sans-serif";
                 ctx.fillText("Quantum wins! Lock broken via period-finding.", 320, 105);
             }
             stTex.update();

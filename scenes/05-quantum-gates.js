@@ -226,14 +226,14 @@ QVR.register({
             // Info
             const ctx = infoTex.getContext();
             ctx.clearRect(0, 0, 400, 160);
-            ctx.font = "20px monospace";
+            ctx.font = "bold 20px monospace";
             ctx.fillStyle = "#aabbff";
             const p0 = (Math.cos(theta / 2) ** 2 * 100).toFixed(1);
             const p1 = (Math.sin(theta / 2) ** 2 * 100).toFixed(1);
             ctx.fillText(`P(|0⟩) = ${p0}%`, 15, 35);
             ctx.fillText(`P(|1⟩) = ${p1}%`, 15, 65);
             ctx.fillStyle = "#667799";
-            ctx.font = "16px monospace";
+            ctx.font = "bold 16px monospace";
             ctx.fillText(`θ=${(theta * 180 / Math.PI).toFixed(0)}° φ=${(phi * 180 / Math.PI).toFixed(0)}°`, 15, 100);
             if (animating) {
                 ctx.fillStyle = "#ffcc44";

@@ -130,10 +130,10 @@ QVR.register({
             // Info
             const ctx = infoTex.getContext();
             ctx.clearRect(0,0,384,128);
-            ctx.textAlign = "center"; ctx.font = "20px monospace";
+            ctx.textAlign = "center"; ctx.font = "bold 20px monospace";
             ctx.fillStyle = coherence > 0.5 ? "#44ff88" : coherence > 0.2 ? "#ffaa44" : "#ff4444";
             ctx.fillText("Coherence: " + (coherence*100).toFixed(1) + "%", 192, 35);
-            ctx.fillStyle = "#8899bb"; ctx.font = "16px sans-serif";
+            ctx.fillStyle = "#8899bb"; ctx.font = "bold 16px sans-serif";
             ctx.fillText(shielded ? "Shield active — decay slowed" : "Exposed to noise", 192, 65);
             ctx.fillText("Vector length = coherence", 192, 90);
             infoTex.update();

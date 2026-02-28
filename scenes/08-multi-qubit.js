@@ -118,12 +118,12 @@ QVR.register({
             ctx.fillStyle = "#aabbff";
             ctx.fillText(numQubits + " qubit" + (numQubits > 1 ? "s" : ""), 256, 40);
 
-            ctx.font = "28px monospace";
+            ctx.font = "bold 28px monospace";
             ctx.fillStyle = "#88ddaa";
             const states = Math.pow(2, numQubits);
             ctx.fillText("2^" + numQubits + " = " + states + " states", 256, 80);
 
-            ctx.font = "18px sans-serif";
+            ctx.font = "bold 18px sans-serif";
             ctx.fillStyle = "#667799";
             if (numQubits >= 5) {
                 ctx.fillText("Each state held simultaneously!", 256, 120);
