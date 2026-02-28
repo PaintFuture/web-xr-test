@@ -241,6 +241,112 @@
             return plane;
         };
 
+        // ── VR Info Panel (3D plane visible in immersive mode) ──
+        qvr.vrInfoPanel = null;
+        qvr.vrInfoVisible = false;
+
+        qvr.createVRInfoPanel = function (scene) {
+            // Panel: 2m wide, 1m tall, positioned 2.5m in front of user
+            const w = 2, h = 1;
+            const plane = BABYLON.MeshBuilder.CreatePlane("vrInfoPanel", { width: w, height: h }, scene);
+            plane.isPickable = false;
+
+            const texW = 1024, texH = 512;
+            const tex = new BABYLON.DynamicTexture("vrInfoTex", { width: texW, height: texH }, scene);
+            tex.hasAlpha = true;
+            const mat = new BABYLON.StandardMaterial("vrInfoMat", scene);
+            mat.diffuseTexture = tex;
+            mat.emissiveTexture = tex;
+            mat.opacityTexture = tex;
+            mat.disableLighting = true;
+            mat.backFaceCulling = false;
+            mat.useAlphaFromDiffuseTexture = true;
+            plane.material = mat;
+            plane.setEnabled(false);
+
+            qvr.vrInfoPanel = plane;
+            qvr.vrInfoTex = tex;
+            return plane;
+        };
+
+        qvr.updateVRInfoContent = function (title, text) {
+            if (!qvr.vrInfoTex) return;
+            const tex = qvr.vrInfoTex;
+            const ctx2d = tex.getContext();
+            const w = 1024, h = 512;
+            ctx2d.clearRect(0, 0, w, h);
+
+            // Background
+            ctx2d.fillStyle = "rgba(5, 5, 25, 0.85)";
+            const r = 20, pad = 20;
+            ctx2d.beginPath();
+            ctx2d.moveTo(pad + r, pad);
+            ctx2d.lineTo(w - pad - r, pad);
+            ctx2d.quadraticCurveTo(w - pad, pad, w - pad, pad + r);
+            ctx2d.lineTo(w - pad, h - pad - r);
+            ctx2d.quadraticCurveTo(w - pad, h - pad, w - pad - r, h - pad);
+            ctx2d.lineTo(pad + r, h - pad);
+            ctx2d.quadraticCurveTo(pad, h - pad, pad, h - pad - r);
+            ctx2d.lineTo(pad, pad + r);
+            ctx2d.quadraticCurveTo(pad, pad, pad + r, pad);
+            ctx2d.closePath();
+            ctx2d.fill();
+
+            // Border
+            ctx2d.strokeStyle = "rgba(100, 140, 255, 0.4)";
+            ctx2d.lineWidth = 2;
+            ctx2d.stroke();
+
+            // Title
+            ctx2d.font = "bold 36px Segoe UI, system-ui, sans-serif";
+            ctx2d.fillStyle = "#88aaff";
+            ctx2d.textAlign = "left";
+            ctx2d.textBaseline = "top";
+            ctx2d.fillText(title || "", 50, 50);
+
+            // Body text — word wrap
+            ctx2d.font = "26px Segoe UI, system-ui, sans-serif";
+            ctx2d.fillStyle = "#ddddef";
+            const maxW = w - 100;
+            const words = (text || "").split(" ");
+            let line = "";
+            let y = 100;
+            const lineH = 34;
+            for (let i = 0; i < words.length; i++) {
+                const test = line + words[i] + " ";
+                if (ctx2d.measureText(test).width > maxW && line) {
+                    ctx2d.fillText(line.trim(), 50, y);
+                    line = words[i] + " ";
+                    y += lineH;
+                    if (y > h - 60) { ctx2d.fillText("...", 50, y); break; }
+                } else {
+                    line = test;
+                }
+            }
+            if (line && y <= h - 60) ctx2d.fillText(line.trim(), 50, y);
+
+            tex.update();
+        };
+
+        qvr.toggleVRInfo = function (scene, xr) {
+            if (!qvr.vrInfoPanel) qvr.createVRInfoPanel(scene);
+            qvr.vrInfoVisible = !qvr.vrInfoVisible;
+            qvr.vrInfoPanel.setEnabled(qvr.vrInfoVisible);
+
+            if (qvr.vrInfoVisible && xr && xr.baseExperience && xr.baseExperience.camera) {
+                // Position panel 2.5m in front of user, at eye height
+                const cam = xr.baseExperience.camera;
+                const fwd = cam.getForwardRay().direction;
+                const pos = cam.position.clone().add(fwd.scale(2.5));
+                qvr.vrInfoPanel.position = pos;
+                qvr.vrInfoPanel.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+
+                // Update content
+                const def = qvr.scenes[qvr.currentIndex];
+                if (def) qvr.updateVRInfoContent(def.title, def.info);
+            }
+        };
+
         // ── XR Interactions (applied to every scene) ────────
         qvr.setupXRInteractions = function (scene, xr) {
             if (!xr || !xr.baseExperience) return;
@@ -265,19 +371,17 @@
                 }
             });
 
-            scene.onBeforeRenderObservable.add(() => {
+            // Head-tilt render callback — stored so it survives scene content clearing
+            const headTiltCallback = () => {
                 if (!xr.baseExperience.camera) return;
                 const cam = xr.baseExperience.camera;
 
-                // Get head pitch from camera rotation
                 const rot = cam.rotationQuaternion;
                 if (!rot) return;
 
-                // Extract pitch (x rotation) from quaternion
                 const euler = rot.toEulerAngles();
-                const pitch = euler.x; // negative = looking down, positive = looking up
+                const pitch = euler.x;
 
-                // Calibrate: store neutral pitch on first frame
                 if (!calibrated) {
                     baseHeadPitch = pitch;
                     calibrated = true;
@@ -286,14 +390,11 @@
 
                 const deltaPitch = pitch - baseHeadPitch;
 
-                // Forward: lean forward (pitch more negative than neutral)
-                // Backward: lean back (pitch more positive than neutral)
                 if (Math.abs(deltaPitch) > DEADZONE_RAD) {
                     const intensity = (Math.abs(deltaPitch) - DEADZONE_RAD) * 3;
                     const speed = Math.min(intensity, 1) * FLY_SPEED;
-                    const direction = deltaPitch < 0 ? -1 : 1; // pitch down = forward, pitch up = backward
+                    const direction = deltaPitch < 0 ? -1 : 1;
 
-                    // Get forward direction from camera (horizontal only)
                     const forward = cam.getForwardRay().direction;
                     forward.y = 0;
                     forward.normalize();
@@ -301,7 +402,11 @@
                     const move = forward.scale(direction * speed);
                     cam.position.addInPlace(move);
                 }
-            });
+            };
+            scene.onBeforeRenderObservable.add(headTiltCallback);
+            // Store for preservation across scene changes
+            if (!qvr._xrRenderCallbacks) qvr._xrRenderCallbacks = [];
+            qvr._xrRenderCallbacks.push(headTiltCallback);
 
             // ── Controller interactions ────────────────────────
             // Pico 4 Ultra profile: pico-4u
@@ -317,11 +422,15 @@
                 controller.onMotionControllerInitObservable.add((mc) => {
                     const hand = mc.handedness; // "left" or "right"
 
-                    // ── BOTH HANDS — SQUEEZE: spawn quantum particle + muzzle flash
+                    // ── BOTH HANDS — SQUEEZE (GRIP): spawn quantum particle + muzzle flash
                     const squeeze = mc.getComponent("xr-standard-squeeze");
                     if (squeeze) {
+                        let squeezeWasPressed = false;
                         squeeze.onButtonStateChangedObservable.add((comp) => {
-                            if (comp.pressed) {
+                            // Use value threshold instead of pressed — more reliable across runtimes
+                            const isDown = comp.value > 0.8 || comp.pressed;
+                            if (isDown && !squeezeWasPressed) {
+                                squeezeWasPressed = true;
                                 QAudio.playParticleSpawn();
                                 const pos = controller.pointer.absolutePosition.clone();
                                 const fwd = controller.pointer.forward.clone();
@@ -369,11 +478,13 @@
                                         particle.dispose(); pMat.dispose();
                                     }
                                 });
+                            } else if (!isDown) {
+                                squeezeWasPressed = false;
                             }
                         });
                     }
 
-                    // ── BOTH HANDS — TRIGGER: interact with scene objects
+                    // ── BOTH HANDS — TRIGGER: ray-pick interact + spawn particle
                     const trigger = mc.getComponent("xr-standard-trigger");
                     if (trigger) {
                         trigger.onButtonStateChangedObservable.add((comp) => {
@@ -390,6 +501,30 @@
                                         BABYLON.ActionManager.OnPickTrigger,
                                         BABYLON.ActionEvent.CreateNew(hit.pickedMesh)
                                     );
+                                } else {
+                                    // No interactive object hit — shoot a particle
+                                    QAudio.playParticleSpawn();
+                                    const pos = controller.pointer.absolutePosition.clone();
+                                    const fwd = controller.pointer.forward.clone();
+                                    const sp = pos.add(fwd.scale(0.3));
+
+                                    const p = BABYLON.MeshBuilder.CreateSphere("tp", {diameter:0.15, segments:8}, scene);
+                                    p.position = sp;
+                                    const pm = new BABYLON.StandardMaterial("tpm", scene);
+                                    const h = Math.random();
+                                    pm.diffuseColor = new BABYLON.Color3(0.3+h*0.7, 0.3+(1-h)*0.5, 0.8);
+                                    pm.emissiveColor = pm.diffuseColor.scale(0.5);
+                                    p.material = pm;
+
+                                    const v = fwd.scale(0.12);
+                                    let l = 1;
+                                    const ob = scene.onBeforeRenderObservable.add(() => {
+                                        p.position.addInPlace(v);
+                                        v.scaleInPlace(0.97);
+                                        l -= 0.01;
+                                        pm.alpha = l;
+                                        if (l <= 0) { scene.onBeforeRenderObservable.remove(ob); p.dispose(); pm.dispose(); }
+                                    });
                                 }
                             }
                         });
@@ -416,13 +551,13 @@
                             });
                         }
 
-                        // ── X BUTTON (left): toggle info panel
+                        // ── X BUTTON (left): toggle VR info panel
                         const xBtn = mc.getComponent("x-button");
                         if (xBtn) {
                             xBtn.onButtonStateChangedObservable.add((comp) => {
                                 if (comp.pressed) {
                                     QAudio.playPing();
-                                    document.getElementById("info-panel").classList.toggle("hidden");
+                                    qvr.toggleVRInfo(scene, xr);
                                 }
                             });
                         }
@@ -445,13 +580,13 @@
                     if (hand === "right") {
                         // Right thumbstick: left by Babylon for teleportation/snap-turn
 
-                        // ── A BUTTON (right): toggle info panel
+                        // ── A BUTTON (right): toggle VR info panel
                         const aBtn = mc.getComponent("a-button");
                         if (aBtn) {
                             aBtn.onButtonStateChangedObservable.add((comp) => {
                                 if (comp.pressed) {
                                     QAudio.playPing();
-                                    document.getElementById("info-panel").classList.toggle("hidden");
+                                    qvr.toggleVRInfo(scene, xr);
                                 }
                             });
                         }
@@ -474,14 +609,26 @@
         };
 
         qvr.transition = async function (callback) {
-            const overlay = document.getElementById("transition-overlay");
-            overlay.classList.add("active");
-            QAudio.playTransition();
-            await new Promise(r => setTimeout(r, 600));
-            await callback();
-            QAudio.playSceneChime();
-            await new Promise(r => setTimeout(r, 200));
-            overlay.classList.remove("active");
+            const inXR = qvr.xrHelper && qvr.xrHelper.baseExperience &&
+                         qvr.xrHelper.baseExperience.state === BABYLON.WebXRState.IN_XR;
+
+            if (inXR) {
+                // In VR: quick transition, no HTML overlay (invisible in XR anyway)
+                QAudio.playTransition();
+                await new Promise(r => setTimeout(r, 150));
+                await callback();
+                QAudio.playSceneChime();
+            } else {
+                // Desktop: use overlay fade
+                const overlay = document.getElementById("transition-overlay");
+                overlay.classList.add("active");
+                QAudio.playTransition();
+                await new Promise(r => setTimeout(r, 600));
+                await callback();
+                QAudio.playSceneChime();
+                await new Promise(r => setTimeout(r, 200));
+                overlay.classList.remove("active");
+            }
         };
 
         qvr.updateMenu = function () {
@@ -517,40 +664,120 @@
             });
         };
 
+        // Clear scene content without disposing the scene itself.
+        // Preserves XR session, camera, and render loop.
+        qvr.clearSceneContent = function (scene) {
+            // Collect meshes/lights/materials to dispose (skip XR internals)
+            const xrMeshNames = new Set(["BackgroundHelper", "BackgroundPlane", "BackgroundSkybox"]);
+            const meshes = scene.meshes.slice();
+            for (let i = 0; i < meshes.length; i++) {
+                const m = meshes[i];
+                if (xrMeshNames.has(m.name)) continue;
+                // Skip XR controller/pointer meshes
+                if (m.name.indexOf("webxr") !== -1 || m.name.indexOf("pointer") !== -1) continue;
+                m.dispose(false, true);
+            }
+            const lights = scene.lights.slice();
+            for (let i = 0; i < lights.length; i++) lights[i].dispose();
+            const transforms = scene.transformNodes.slice();
+            for (let i = 0; i < transforms.length; i++) {
+                if (transforms[i].name.indexOf("webxr") !== -1) continue;
+                transforms[i].dispose();
+            }
+            // Clear particle systems
+            const particles = scene.particleSystems.slice();
+            for (let i = 0; i < particles.length; i++) particles[i].dispose();
+            // Clear glow layers
+            if (scene.effectLayers) {
+                const effects = scene.effectLayers.slice();
+                for (let i = 0; i < effects.length; i++) effects[i].dispose();
+            }
+            // Clear scene-specific render observers but preserve XR ones.
+            if (qvr._xrRenderCallbacks) {
+                const callbacks = qvr._xrRenderCallbacks.slice();
+                scene.onBeforeRenderObservable.clear();
+                // Re-register XR callbacks
+                callbacks.forEach(function(cb) {
+                    scene.onBeforeRenderObservable.add(cb);
+                });
+            } else {
+                scene.onBeforeRenderObservable.clear();
+            }
+        };
+
         qvr.goTo = async function (index) {
             if (index < 0 || index >= qvr.scenes.length) return;
             if (index === qvr.currentIndex) return;
 
+            const isFirstLoad = !qvr.currentScene;
+            const wasInXR = qvr.xrHelper && qvr.xrHelper.baseExperience &&
+                            qvr.xrHelper.baseExperience.state === BABYLON.WebXRState.IN_XR;
+
             await qvr.transition(async () => {
-                // Cleanup old scene
-                if (qvr.currentScene) {
+                // Reset VR info panel state
+                qvr.vrInfoPanel = null;
+                qvr.vrInfoTex = null;
+                qvr.vrInfoVisible = false;
+
+                const def = qvr.scenes[index];
+
+                if (isFirstLoad) {
+                    // First load: create scene + XR from scratch
+                    const scene = new BABYLON.Scene(engine);
+                    qvr.currentScene = scene;
+                    qvr.currentIndex = index;
+
+                    await def.setup(scene, qvr);
+
+                    try {
+                        const ground = scene.getMeshByName("ground");
+                        if (ground) {
+                            qvr.xrHelper = await scene.createDefaultXRExperienceAsync({
+                                floorMeshes: [ground],
+                                disableTeleportation: false,
+                            });
+                            qvr.setupXRInteractions(scene, qvr.xrHelper);
+                        }
+                    } catch (e) { /* WebXR not available */ }
+
+                    engine.stopRenderLoop();
+                    engine.runRenderLoop(() => scene.render());
+                } else {
+                    // Subsequent loads: clear content, rebuild in same scene
+                    const scene = qvr.currentScene;
+
+                    // Run old scene cleanup if defined
                     if (qvr.scenes[qvr.currentIndex] && qvr.scenes[qvr.currentIndex].cleanup) {
                         qvr.scenes[qvr.currentIndex].cleanup();
                     }
-                    qvr.currentScene.dispose();
-                    qvr.currentScene = null;
-                }
 
-                // Create new scene
-                const def = qvr.scenes[index];
-                const scene = new BABYLON.Scene(engine);
-                qvr.currentScene = scene;
-                qvr.currentIndex = index;
+                    qvr.currentIndex = index;
 
-                // Setup
-                await def.setup(scene, qvr);
-
-                // Try WebXR + controller/head interactions
-                try {
-                    const ground = scene.getMeshByName("ground");
-                    if (ground) {
-                        qvr.xrHelper = await scene.createDefaultXRExperienceAsync({
-                            floorMeshes: [ground],
-                            disableTeleportation: false,
-                        });
-                        qvr.setupXRInteractions(scene, qvr.xrHelper);
+                    // Detach old cameras before clearing
+                    const cams = scene.cameras.slice();
+                    for (let i = 0; i < cams.length; i++) {
+                        // Keep XR cameras
+                        if (cams[i].name.indexOf("webxr") !== -1 || cams[i].name.indexOf("WebXR") !== -1) continue;
+                        cams[i].detachControl();
+                        cams[i].dispose();
                     }
-                } catch (e) { /* WebXR not available */ }
+
+                    qvr.clearSceneContent(scene);
+
+                    // Rebuild scene content
+                    await def.setup(scene, qvr);
+
+                    // Update XR floor mesh for teleportation
+                    if (qvr.xrHelper && qvr.xrHelper.teleportation) {
+                        const ground = scene.getMeshByName("ground");
+                        if (ground) {
+                            try {
+                                qvr.xrHelper.teleportation.removeFloorMeshByName("ground");
+                            } catch(e) {}
+                            qvr.xrHelper.teleportation.addFloorMesh(ground);
+                        }
+                    }
+                }
 
                 // Update HUD
                 document.getElementById("scene-title").textContent = def.title || "";
@@ -562,10 +789,6 @@
 
                 // Update menu
                 qvr.updateMenu();
-
-                // Start render
-                engine.stopRenderLoop();
-                engine.runRenderLoop(() => scene.render());
             });
         };
 
